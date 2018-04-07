@@ -12,7 +12,7 @@ import scala.language.existentials
   * object) provide the unification point of all different stainless tree
   * types that can appear once extraction and pre-processing has finished.
   *
-  * The hierarhcy is
+  * The hierarchy is
   *   extraction < inlining < innerfuns < imperative < holes < oo < throwing < methods < xlang
   *
   * Inlining adds support for function inlining.
