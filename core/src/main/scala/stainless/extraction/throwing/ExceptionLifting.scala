@@ -14,6 +14,13 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
     oo.SymbolTransformer(new inox.ast.TreeTransformer {
       val s: self.s.type = self.s
       val t: self.t.type = self.t
+
+      override def transform(e: s.Expr): t.Expr = {
+        if (s.exprOps.hasSpec(e)) {
+          ???
+        } else super.transform(e)
+      }
+
     }).transform(symbols)
   }
 }
