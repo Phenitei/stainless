@@ -6,8 +6,19 @@ package throwing
 
 trait Trees extends oo.Trees { self =>
 
-  protected def getExceptionType(implicit s: Symbols): Option[Type] =
+  /* Find the Type of various classes we use */
+  def getExceptionType(implicit s: Symbols): Option[Type] =
     s.lookup.get[ClassDef]("stainless.lang.Exception").map(cd => ClassType(cd.id, Seq()))
+
+  def getEitherType(leftTpe: Type, rightTpe: Type)(implicit s: Symbols): Option[Type] =
+    s.lookup.get[ClassDef]("stainless.lang.Either").map(cd => ClassType(cd.id, Seq(leftTpe, rightTpe)))
+
+  def getLeftType(value: Type)(implicit s: Symbols): Option[Type] =
+    s.lookup.get[ClassDef]("stainless.lang.Left").map(cd => ClassType(cd.id, Seq(value)))
+
+  def getRightType(value: Type)(implicit s: Symbols): Option[Type] =
+    s.lookup.get[ClassDef]("stainless.lang.Right").map(cd => ClassType(cd.id, Seq(value)))
+
 
   /** Throwing clause of an [[ast.Expressions.Expr]]. Corresponds to the Stainless keyword *throwing*
     *

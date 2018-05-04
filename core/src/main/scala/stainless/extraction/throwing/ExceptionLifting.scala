@@ -10,15 +10,70 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
 
   def transform(symbols: s.Symbols): t.Symbols = {
 
-    // FIXME: encode exceptions!
     oo.SymbolTransformer(new inox.ast.TreeTransformer {
       val s: self.s.type = self.s
       val t: self.t.type = self.t
+      implicit val syms = symbols
 
-      override def transform(e: s.Expr): t.Expr = {
-        if (s.exprOps.hasSpec(e)) {
-          ???
-        } else super.transform(e)
+      override def transform(e: s.Expr): t.Expr = e match {
+
+        /* Encode the predicate in the throwing inside a pattern match in the ensuring */
+        case s.Throwing(tBody, thrPred) => tBody match {
+            case s.Ensuring(eBody, ensPred) => matchInEnsuring(eBody, thrPred, ensPred)
+            case _ => matchInEnsuring(tBody, thrPred, s.Lambda(Seq.empty, s.BooleanLiteral(true)))
+        }
+
+        /* Replace a `throw` with a Left containing the exception
+        case s.Throw(ex) => ???
+        */
+
+          /* TODO :
+           * * Put the result of the function call in a Right. !! C'est plus complique, check le papelard !!
+           * * Deal with other functions calling me.
+           * * Deal with types.
+           */
+        case _ => super.transform(e)
+      }
+
+      def matchInEnsuring(body: s.Expr, leftPred: s.Lambda, rightPred: s.Lambda): t.Expr = {
+        /* Compute all the types we will need to build the pattern match */
+        val nBody = this.transform(body)
+
+        val exceptionType = s.getExceptionType match {
+          case Some(tpe) => tpe
+          case _ => throw new IllegalStateException("Could not find Exception type!")
+        }
+
+        val eitherType = s.getEitherType(exceptionType, body.getType) match {
+          case Some(tpe) => this.transform(tpe)
+          case _ => throw new IllegalStateException("Could not find Either type!")
+        }
+
+        val leftType = s.getLeftType(exceptionType) match {
+          case Some(tpe) => this.transform(tpe)
+          case _ => throw new IllegalStateException("Could not find Left type!")
+        }
+
+        val rightType = s.getRightType(body.getType) match {
+          case Some(tpe) => this.transform(tpe)
+          case _ => throw new IllegalStateException("Could not find Right type!")
+        }
+
+        val eRes: t.ValDef = t.ValDef(FreshIdentifier("eRes", alwaysShowUniqueID = true), eitherType)
+
+        /* Build the pattern match between Left[Exception](res) => leftPred(res) and Right[A](res) => rightPred(res) */
+        val pred = t.Lambda(Seq(eRes), t.MatchExpr(nBody, Seq(
+          t.MatchCase(
+            t.ClassPattern(None, leftType.asInstanceOf[t.ClassType],
+              Seq(t.WildcardPattern(Some(t.ValDef(FreshIdentifier("res", alwaysShowUniqueID = true), this.transform(exceptionType)))))),
+            None, t.Application(this.transform(leftPred), Seq(nBody))),
+          t.MatchCase(
+            t.ClassPattern(None, rightType.asInstanceOf[t.ClassType],
+              Seq(t.WildcardPattern(Some(t.ValDef(FreshIdentifier("res", alwaysShowUniqueID = true), this.transform(body.getType)))))),
+            None, t.Application(this.transform(rightPred), Seq(nBody)))
+          )))
+
+        t.exprOps.withPostcondition(nBody, Some(pred))
       }
 
     }).transform(symbols)
