@@ -23,8 +23,18 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
             case _ => matchInEnsuring(tBody, thrPred, s.Lambda(Seq.empty, s.BooleanLiteral(true)))
         }
 
-        /* Replace a `throw` with a Left containing the exception
-        case s.Throw(ex) => ???
+        /* Replace a `throw` with a Left containing the exception */
+        case s.Throw(ex) => {
+          val leftType = s.getLeftType(ex.getType) match {
+            case Some(tpe) => this.transform(tpe)
+            case _ => throw new IllegalStateException("Could not find Left type!")
+          }
+
+          t.ClassConstructor(leftType.asInstanceOf[t.ClassType], Seq(this.transform(ex)))
+        }
+
+        /* try to find the call site of the function throwing the exception
+        case s.Try(tBody, cases, finallizer) => ???
         */
 
           /* TODO :
