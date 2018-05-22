@@ -4,6 +4,26 @@ package stainless
 package extraction
 package throwing
 
+/* TODO :
+ * * Try to deal with non-explicit exceptions, such as division by zero, etc...
+ * * Fix that every function that throws needs a throwing and vice-versa: ideally, one could hope that one without the
+ *   other would warn the user instead of catching fire.
+ * * Deal with cases where a try/catch body contains more code than a throwing function, where we must find the call
+ *   site (if it exists) of the vulnerable function, pattern match against it's result, and check that the corresponding
+ *   exception is caught.
+ *
+ * Notes to self/reader:
+ * * Only `if - cond - throw - else - body` and `if - cond - body - else - throw` are recognized; this means that
+ *   functions that use the throw keyword must contain this form as their returning statement.
+ * * Every function with a `throw` must have a throwing, and every function with a throwing must have a throw, else
+ *   things will go FUBAR.
+ * * The above means that operators that throw an exception non explicitly (such as `x / 0`) aren't lifted.
+ * * I used the haskell « Right is right » convention for the results: we use Either[Exception, NormalResult].
+ * * The predicate in a `throwing` is added inside the `ensuring`, under a pattern match of the form
+ *       case Left(e)  => (throwingPredicate)(e)
+ *       case Right(r) => (previous ensuring predicate -- `true` if there was none)(r)
+ * *
+ */
 trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
   val s: Trees
   val t: oo.Trees
@@ -13,7 +33,7 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
     oo.SymbolTransformer(new inox.ast.TreeTransformer {
       val s: self.s.type = self.s
       val t: self.t.type = self.t
-      implicit val syms = symbols
+      implicit val syms: s.Symbols = symbols
 
       override def transform(e: s.Expr): t.Expr = e match {
 
@@ -25,9 +45,10 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
 
         /* Replace an if-throw-else-body or if-body-else-throw construct by an if left else right */
         case s.IfExpr(cond, thenn @ s.Throw(ex), elze) => {
+
           val leftType = s.getLeftType(ex.getType) match {
             case Some(tpe) => this.transform(tpe)
-            case _ => throw new IllegalStateException("Could not find Left type!")
+            case e => throw new IllegalStateException("Could not find Left type: " + e)
           }
 
           val rightType = s.getRightType(elze.getType) match {
@@ -57,15 +78,8 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
 
         }
 
-        /* try to find the call site of the function throwing the exception
-        case s.Try(tBody, cases, finallizer) => ???
-        */
+        case s.Try(tBody, cases, None) => ???
 
-          /* TODO :
-           * * Put the result of the function call in a Right. !! C'est plus complique, check le papelard !!
-           * * Deal with other functions calling me.
-           * * Deal with types.
-           */
         case _ => super.transform(e)
       }
 
