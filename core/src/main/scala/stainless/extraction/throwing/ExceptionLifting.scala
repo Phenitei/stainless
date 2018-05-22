@@ -23,14 +23,38 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
             case _ => matchInEnsuring(tBody, thrPred, s.Lambda(Seq.empty, s.BooleanLiteral(true)))
         }
 
-        /* Replace a `throw` with a Left containing the exception */
-        case s.Throw(ex) => {
+        /* Replace an if-throw-else-body or if-body-else-throw construct by an if left else right */
+        case s.IfExpr(cond, thenn @ s.Throw(ex), elze) => {
           val leftType = s.getLeftType(ex.getType) match {
             case Some(tpe) => this.transform(tpe)
             case _ => throw new IllegalStateException("Could not find Left type!")
           }
 
-          t.ClassConstructor(leftType.asInstanceOf[t.ClassType], Seq(this.transform(ex)))
+          val rightType = s.getRightType(elze.getType) match {
+            case Some(tpe) => this.transform(tpe)
+            case _ => throw new IllegalStateException("Could not find Right type!")
+          }
+
+          t.IfExpr(this.transform(cond),
+            t.ClassConstructor(leftType.asInstanceOf[t.ClassType], Seq(this.transform(ex))),
+            t.ClassConstructor(rightType.asInstanceOf[t.ClassType], Seq(this.transform(elze))))
+        }
+
+        case s.IfExpr(cond, thenn, elze @ s.Throw(ex)) => {
+          val leftType = s.getLeftType(ex.getType) match {
+            case Some(tpe) => this.transform(tpe)
+            case _ => throw new IllegalStateException("Could not find Left type!")
+          }
+
+          val rightType = s.getRightType(elze.getType) match {
+            case Some(tpe) => this.transform(tpe)
+            case _ => throw new IllegalStateException("Could not find Right type!")
+          }
+
+          t.IfExpr(this.transform(cond),
+            t.ClassConstructor(rightType.asInstanceOf[t.ClassType], Seq(this.transform(thenn))),
+            t.ClassConstructor(leftType.asInstanceOf[t.ClassType], Seq(this.transform(ex))))
+
         }
 
         /* try to find the call site of the function throwing the exception
