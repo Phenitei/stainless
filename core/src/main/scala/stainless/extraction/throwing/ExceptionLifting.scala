@@ -48,7 +48,7 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
 
           val leftType = s.getLeftType(ex.getType) match {
             case Some(tpe) => this.transform(tpe)
-            case e => throw new IllegalStateException("Could not find Left type: " + e)
+            case _ => throw new IllegalStateException("Could not find Left type!")
           }
 
           val rightType = s.getRightType(elze.getType) match {
@@ -78,7 +78,40 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
 
         }
 
-        case s.Try(tBody, cases, None) => ???
+        case s.Try(tBody, cases, finallizer) => {
+          val nBody = this.transform(tBody)
+          val res = t.ValDef(FreshIdentifier("res", alwaysShowUniqueID = true), t.AnyType())
+          val exception = t.ValDef(FreshIdentifier("exc", alwaysShowUniqueID = true), this.transform(s.getExceptionType.get))
+
+          /* Right can contain anything here */
+          val rightType = s.getRightType(s.AnyType()) match {
+            case Some(tpe) => this.transform(tpe).asInstanceOf[t.ClassType]
+            case _ => throw new IllegalStateException("Could not find Right type!")
+          }
+          val leftType = s.getLeftType(s.AnyType()) match {
+            case Some(tpe) => this.transform(tpe).asInstanceOf[t.ClassType]
+            case _ => throw new IllegalStateException("Could not find Left type!")
+          }
+
+          val okRes = finallizer match {
+            case None => t.Variable(res.id, t.AnyType(), Seq())
+            case Some(finBody) => t.Block(Seq(t.Variable(res.id, t.AnyType(), Seq())), this.transform(finBody))
+          }
+
+          // match the body on left right.
+          t.MatchExpr(nBody, Seq(
+            // if right, return the inside
+            t.MatchCase(
+              t.ClassPattern(None, rightType, Seq(t.WildcardPattern(Some(res)))),
+              None, okRes),
+            // if left, match the content against the cases
+            t.MatchCase(
+              t.ClassPattern(None, leftType, Seq(t.WildcardPattern(Some(exception)))), None,
+              t.MatchExpr(t.Variable(exception.id, this.transform(s.getExceptionType.get), Seq()),
+                ???) // FIXME: how to transform s.Tree -> t.Tree (in particular, `MatchCase`s)?
+            )
+          ))
+        }
 
         case _ => super.transform(e)
       }
@@ -123,6 +156,7 @@ trait ExceptionLifting extends inox.ast.SymbolTransformer { self =>
 
         t.exprOps.withPostcondition(nBody, Some(pred))
       }
+
 
     }).transform(symbols)
   }
